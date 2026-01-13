@@ -1,0 +1,7 @@
+{
+  "name": "VisionBoard.ai",
+  "description": "A collaborative storyboard whiteboard to define vision, releases, and personas. Features AI-powered release notes, voice-controlled board management, and persona image generation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
