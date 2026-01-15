@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
-import { BackboneTask, Persona } from '../types';
-import { X, Save, Map, ChevronDown, User } from 'lucide-react';
+import { BackboneTask, Persona, JourneyPhase } from '../types';
+import { X, Save, Map, ChevronDown, User, Layers } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface Props {
@@ -8,21 +9,24 @@ interface Props {
   onClose: () => void;
   step: BackboneTask | null;
   personas: Persona[];
+  phases: JourneyPhase[];
   onSave: (step: BackboneTask) => void;
 }
 
-export const StepEditorModal: React.FC<Props> = ({ isOpen, onClose, step, personas, onSave }) => {
+export const StepEditorModal: React.FC<Props> = ({ isOpen, onClose, step, personas, phases, onSave }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [personaId, setPersonaId] = useState<string>('');
+  const [phaseId, setPhaseId] = useState<string>('');
 
   useEffect(() => {
     if (step) {
       setTitle(step.title);
       setDescription(step.details?.description || '');
       setPersonaId(step.personaId || '');
+      setPhaseId(step.phaseId || (phases[0]?.id || ''));
     }
-  }, [step]);
+  }, [step, phases]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +35,7 @@ export const StepEditorModal: React.FC<Props> = ({ isOpen, onClose, step, person
         ...step, 
         title, 
         personaId: personaId || undefined,
+        phaseId: phaseId,
         details: {
             ...step.details,
             description: description,
@@ -51,10 +56,8 @@ export const StepEditorModal: React.FC<Props> = ({ isOpen, onClose, step, person
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="bg-[#0f172a]/90 border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden relative"
+        className="bg-[#0f172a] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden relative"
       >
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-opacity-5 pointer-events-none" />
-
         <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#020617]/50 relative z-10">
           <h2 className="text-lg font-bold text-slate-100 flex items-center gap-3">
             <div className="p-2 bg-emerald-500/10 rounded-lg">
@@ -89,46 +92,49 @@ export const StepEditorModal: React.FC<Props> = ({ isOpen, onClose, step, person
             />
           </div>
 
-          <div className="group">
-            <label className="block text-xs font-bold text-slate-400 uppercase mb-2 ml-1 tracking-widest group-focus-within:text-emerald-400 transition-colors">Primary Persona</label>
-            <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
-                    <User className="w-4 h-4" />
-                </div>
-                <select 
-                    value={personaId} 
-                    onChange={e => setPersonaId(e.target.value)}
-                    className="w-full pl-10 pr-10 py-3 bg-black/20 border border-white/10 rounded-xl text-slate-200 focus:outline-none focus:bg-slate-900/60 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all duration-300 shadow-inner appearance-none cursor-pointer"
-                >
-                    <option value="" className="bg-slate-900 text-slate-400">-- No Specific Persona --</option>
-                    {personas.map(p => (
-                    <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">{p.name} ({p.role})</option>
-                    ))}
-                </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
-                    <ChevronDown className="w-4 h-4" />
+          <div className="grid grid-cols-1 gap-6">
+            <div className="group">
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-2 ml-1 tracking-widest group-focus-within:text-emerald-400 transition-colors">Primary Persona</label>
+                <div className="relative">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+                        <User className="w-4 h-4" />
+                    </div>
+                    <select 
+                        value={personaId} 
+                        onChange={e => setPersonaId(e.target.value)}
+                        className="w-full pl-10 pr-10 py-3 bg-black/20 border border-white/10 rounded-xl text-slate-200 focus:outline-none focus:bg-slate-900/60 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all duration-300 shadow-inner appearance-none cursor-pointer"
+                    >
+                        <option value="" className="bg-slate-900 text-slate-400">-- No Specific Persona --</option>
+                        {personas.map(p => (
+                        <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">{p.name} ({p.role})</option>
+                        ))}
+                    </select>
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+                        <ChevronDown className="w-4 h-4" />
+                    </div>
                 </div>
             </div>
-              
-              {selectedPersona && (
-                <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center gap-4 p-4 bg-gradient-to-r from-slate-900/50 to-slate-800/50 rounded-xl border border-white/5 mt-4 shadow-lg backdrop-blur-sm"
-                >
-                  <div className="relative">
-                    <img src={selectedPersona.avatarUrl} alt={selectedPersona.name} className="w-12 h-12 rounded-full object-cover ring-2 ring-white/10 shadow-lg" />
-                    <div 
-                      className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-slate-900 shadow-sm"
-                      style={{ backgroundColor: selectedPersona.color }}
-                    />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-slate-200">{selectedPersona.name}</p>
-                    <p className="text-xs text-slate-500 font-medium tracking-wide">{selectedPersona.role}</p>
-                  </div>
-                </motion.div>
-              )}
+
+            <div className="group">
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-2 ml-1 tracking-widest group-focus-within:text-emerald-400 transition-colors">Category (Phase)</label>
+                <div className="relative">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+                        <Layers className="w-4 h-4" />
+                    </div>
+                    <select 
+                        value={phaseId} 
+                        onChange={e => setPhaseId(e.target.value)}
+                        className="w-full pl-10 pr-10 py-3 bg-black/20 border border-white/10 rounded-xl text-slate-200 focus:outline-none focus:bg-slate-900/60 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all duration-300 shadow-inner appearance-none cursor-pointer"
+                    >
+                        {phases.map(p => (
+                        <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">{p.title}</option>
+                        ))}
+                    </select>
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+                        <ChevronDown className="w-4 h-4" />
+                    </div>
+                </div>
+            </div>
           </div>
 
           <div className="pt-6 flex justify-end gap-3 border-t border-white/5 mt-4">

@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { DndContext, DragOverlay, useDraggable, useDroppable, DragEndEvent } from '@dnd-kit/core';
 import { ProductBoard, Story, Release, Persona, BackboneTask, JourneyPhase } from '../types';
-import { Plus, LayoutGrid, ChevronRight, ChevronDown, Layers } from 'lucide-react';
+import { Plus, LayoutGrid, ChevronRight, ChevronDown, Layers, Settings, MoreVertical } from 'lucide-react';
 import clsx from 'clsx';
 import { DeepDiveModal } from './DeepDiveModal';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -69,11 +69,12 @@ const Cell: React.FC<{
   releaseId: string; 
   taskId?: string; // If undefined, this is a Phase summary cell
   phaseId?: string; // Used if taskId is undefined
+  phase?: JourneyPhase;
   stories: Story[];
   onOpenStory: (s: Story) => void;
   onAddStory: () => void;
   isPhaseSummary?: boolean;
-}> = ({ releaseId, taskId, phaseId, stories, onOpenStory, onAddStory, isPhaseSummary }) => {
+}> = ({ releaseId, taskId, phaseId, phase, stories, onOpenStory, onAddStory, isPhaseSummary }) => {
   
   // If phase summary, use phaseId in ID, else use taskId
   const dropId = isPhaseSummary ? `${releaseId}::PHASE::${phaseId}` : `${releaseId}::${taskId}`;
@@ -88,6 +89,10 @@ const Cell: React.FC<{
         isPhaseSummary && "bg-white/[0.02]"
       )}
     >
+      {isPhaseSummary && phase?.color && (
+          <div className="absolute inset-y-0 left-0 w-1 opacity-20" style={{ backgroundColor: phase.color }} />
+      )}
+
       <div className="flex-1 space-y-2">
         {stories.map(story => (
             <div key={story.id} onDoubleClick={(e) => { e.stopPropagation(); onOpenStory(story); }}>
@@ -97,13 +102,15 @@ const Cell: React.FC<{
       </div>
       
       {/* Ghost Add Button */}
-      <button 
-        onClick={onAddStory}
-        className="w-full py-2 mt-3 rounded border border-dashed border-white/10 text-slate-500 hover:border-indigo-500/50 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all opacity-0 group-hover/cell:opacity-100 flex items-center justify-center gap-2 scale-95 hover:scale-100"
-      >
-        <Plus className="w-3 h-3" />
-        <span className="text-[10px] font-medium uppercase tracking-wide">Add</span>
-      </button>
+      {!isPhaseSummary && (
+        <button 
+            onClick={onAddStory}
+            className="w-full py-2 mt-3 rounded border border-dashed border-white/10 text-slate-500 hover:border-indigo-500/50 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all opacity-0 group-hover/cell:opacity-100 flex items-center justify-center gap-2 scale-95 hover:scale-100"
+        >
+            <Plus className="w-3 h-3" />
+            <span className="text-[10px] font-medium uppercase tracking-wide">Add</span>
+        </button>
+      )}
     </div>
   );
 };
@@ -116,6 +123,8 @@ interface BoardProps {
   onAddStep: () => void;
   onAddRelease: () => void;
   onAddStory: (releaseId: string, taskId: string) => void;
+  onAddPhase: () => void;
+  onUpdatePhase: (phase: JourneyPhase) => void;
 }
 
 export const Board: React.FC<BoardProps> = ({ 
@@ -124,7 +133,9 @@ export const Board: React.FC<BoardProps> = ({
   onUpdateProduct, 
   onAddStep, 
   onAddRelease,
-  onAddStory 
+  onAddStory,
+  onAddPhase,
+  onUpdatePhase
 }) => {
   const [activeStory, setActiveStory] = useState<Story | null>(null);
   const [collapsedPhases, setCollapsedPhases] = useState<Set<string>>(new Set());
@@ -132,6 +143,9 @@ export const Board: React.FC<BoardProps> = ({
   // Modal State
   const [modalType, setModalType] = useState<'VISION'|'TASK'|'STORY'|null>(null);
   const [selectedItem, setSelectedItem] = useState<any>(null);
+
+  // Phase Settings Popover State
+  const [activePhaseSettings, setActivePhaseSettings] = useState<string | null>(null);
 
   const togglePhase = (phaseId: string) => {
     const next = new Set(collapsedPhases);
@@ -201,9 +215,6 @@ export const Board: React.FC<BoardProps> = ({
   };
 
   // --- Column Calculation ---
-  // We need to flatten the columns based on whether a Phase is collapsed or not.
-  // A column can be a specific TASK or a PHASE_SUMMARY.
-
   const visibleColumns = useMemo(() => {
     const columns: Array<{ 
         type: 'TASK' | 'PHASE_SUMMARY', 
@@ -215,11 +226,10 @@ export const Board: React.FC<BoardProps> = ({
     // Ensure we have at least one phase if data is old
     const phasesToRender = product.phases && product.phases.length > 0 
         ? product.phases 
-        : [{ id: 'default_phase', title: 'Main Journey', order: 0 }];
+        : [{ id: 'default_phase', title: 'Main Journey', order: 0, color: '#64748b' }];
 
     phasesToRender.forEach(phase => {
         const isCollapsed = collapsedPhases.has(phase.id);
-        // Find tasks for this phase
         const phaseTasks = product.tasks.filter(t => t.phaseId === phase.id || (!t.phaseId && phase.id === 'default_phase'));
         
         if (isCollapsed) {
@@ -231,8 +241,7 @@ export const Board: React.FC<BoardProps> = ({
             });
         } else {
             if (phaseTasks.length === 0) {
-                 // Empty phase, show drop zone? or just phase header?
-                 // For now, let's assume valid data or just show empty space
+                 // Empty phase
             }
             phaseTasks.forEach(task => {
                 columns.push({
@@ -267,34 +276,32 @@ export const Board: React.FC<BoardProps> = ({
         <div className="flex flex-col sticky top-[53px] z-30 shadow-lg shadow-black/50">
             
             {/* Row 1: Journey Phases (Activities) */}
-            <div className="flex bg-[#121212] border-b border-white/5">
+            <div className="flex bg-[#121212] border-b border-white/5 relative">
                 <div className="w-44 flex-shrink-0 bg-[#18181b] border-r border-white/5 p-2 flex items-center justify-center">
                     <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest flex items-center gap-1">
                         <Layers className="w-3 h-3" /> Journey
                     </span>
                 </div>
-                <div className="flex flex-1">
+                <div className="flex flex-1 items-stretch">
                     {(product.phases || []).length > 0 ? product.phases.map(phase => {
                         const isCollapsed = collapsedPhases.has(phase.id);
                         const phaseTasks = product.tasks.filter(t => t.phaseId === phase.id);
-                        // Calculate colspan style approximately by logic:
-                        // If collapsed: takes 1 slot.
-                        // If expanded: takes N slots (where N = phaseTasks.length).
-                        // Since we are using flexbox, we just need to ensure the header width matches the columns below.
-                        
+                        const isSettingsOpen = activePhaseSettings === phase.id;
+
                         return (
                             <div 
                                 key={phase.id} 
                                 className={clsx(
-                                    "border-r border-white/10 px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors group select-none",
-                                    // If collapsed, width is fixed to summary column. If expanded, it grows to cover children.
-                                    isCollapsed ? "min-w-[200px]" : `flex-[${phaseTasks.length}]`
+                                    "border-r border-white/10 px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors group select-none relative",
+                                    isCollapsed ? "min-w-[200px]" : `flex-[${Math.max(1, phaseTasks.length)}]`
                                 )}
-                                style={{ flexGrow: isCollapsed ? 0 : phaseTasks.length }}
-                                onClick={() => togglePhase(phase.id)}
+                                style={{ 
+                                    flexGrow: isCollapsed ? 0 : Math.max(1, phaseTasks.length),
+                                    borderTop: `3px solid ${phase.color || '#64748b'}`
+                                }}
                             >
-                                <div className="flex items-center gap-2">
-                                    <div className="p-1 rounded-md bg-indigo-500/10 text-indigo-400">
+                                <div className="flex items-center gap-2 flex-1" onClick={() => togglePhase(phase.id)}>
+                                    <div className="p-1 rounded-md bg-white/5 text-slate-400">
                                         {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                     </div>
                                     <span className="text-xs font-bold text-slate-300 uppercase tracking-wide group-hover:text-white">{phase.title}</span>
@@ -302,14 +309,52 @@ export const Board: React.FC<BoardProps> = ({
                                         <span className="text-[9px] bg-white/10 px-1.5 rounded-full text-slate-500">{phaseTasks.length} Steps</span>
                                     )}
                                 </div>
+                                
+                                {/* Settings Trigger */}
+                                <div className="relative">
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); setActivePhaseSettings(isSettingsOpen ? null : phase.id); }}
+                                        className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded text-slate-400 transition-all"
+                                    >
+                                        <MoreVertical className="w-3 h-3" />
+                                    </button>
+
+                                    {/* Settings Popover */}
+                                    {isSettingsOpen && (
+                                        <div className="absolute top-full right-0 mt-2 w-48 bg-[#1c1c1e] border border-white/10 rounded-xl shadow-2xl p-3 z-50 flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+                                            <input 
+                                                className="bg-black/20 border border-white/10 rounded px-2 py-1 text-xs text-white w-full"
+                                                value={phase.title}
+                                                onChange={e => onUpdatePhase({...phase, title: e.target.value})}
+                                            />
+                                            <div className="flex gap-1 flex-wrap">
+                                                {['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#6366f1'].map(c => (
+                                                    <button 
+                                                        key={c}
+                                                        onClick={() => onUpdatePhase({...phase, color: c})}
+                                                        className={clsx("w-5 h-5 rounded-full border border-white/10", phase.color === c ? "ring-2 ring-white" : "")}
+                                                        style={{ backgroundColor: c }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         );
                     }) : (
                          <div className="flex-1 px-4 py-2 text-xs text-slate-500 italic">No Phases Defined</div>
                     )}
-                     {/* Add Step Button Area */}
-                     <div className="w-16 border-l border-dashed border-white/5" />
+                     
+                     {/* Add Phase Button */}
+                     <div className="w-16 border-l border-dashed border-white/5 flex items-center justify-center hover:bg-white/5 cursor-pointer" onClick={onAddPhase}>
+                        <div className="p-1.5 rounded-full border border-white/10 bg-white/5 text-slate-400 hover:text-white transition-colors">
+                            <Plus className="w-4 h-4" />
+                        </div>
+                     </div>
                 </div>
+                {/* Overlay to close popovers */}
+                {activePhaseSettings && <div className="fixed inset-0 z-40" onClick={() => setActivePhaseSettings(null)} />}
             </div>
 
             {/* Row 2: Personas & Tasks (The Backbone) */}
@@ -321,14 +366,13 @@ export const Board: React.FC<BoardProps> = ({
                 <div className="flex flex-1">
                     {visibleColumns.map((col, idx) => {
                         if (col.type === 'PHASE_SUMMARY') {
+                            const phase = col.data as JourneyPhase;
                             // Render simplified "Overview" column header
                             return (
                                 <div key={`ph-col-${col.id}`} className={clsx("flex-col border-r border-white/5 relative bg-white/[0.02]", col.width)}>
-                                    <div className="flex-1 flex items-center justify-center h-full min-h-[96px] p-2 text-center">
-                                        <p className="text-xs text-slate-500 italic">
-                                            Phase Collapsed <br/>
-                                            <span className="font-bold text-slate-400 not-italic">{col.data.title}</span>
-                                        </p>
+                                    <div className="flex-1 flex flex-col items-center justify-center h-full min-h-[96px] p-2 text-center gap-2">
+                                        <p className="text-[10px] text-slate-500 italic uppercase tracking-wider">Phase Collapsed</p>
+                                        <p className="font-bold text-slate-300" style={{ color: phase.color }}>{phase.title}</p>
                                     </div>
                                 </div>
                             );
@@ -403,6 +447,7 @@ export const Board: React.FC<BoardProps> = ({
                     if (col.type === 'PHASE_SUMMARY') {
                         // Aggregate stories from all tasks in this phase
                         const phaseId = col.id;
+                        const phase = col.data as JourneyPhase;
                         // Find all tasks that belong to this phase
                         const taskIdsInPhase = product.tasks.filter(t => t.phaseId === phaseId).map(t => t.id);
                         
@@ -415,6 +460,7 @@ export const Board: React.FC<BoardProps> = ({
                                 <Cell 
                                   releaseId={release.id} 
                                   phaseId={phaseId}
+                                  phase={phase}
                                   stories={aggregatedStories}
                                   onOpenStory={(s) => handleOpenModal('STORY', s)}
                                   onAddStory={() => {

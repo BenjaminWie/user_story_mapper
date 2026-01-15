@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { DragEndEvent } from '@dnd-kit/core';
 import { Mic, MicOff, Layout, ArrowLeft, Users, Sparkles } from 'lucide-react';
-import { ProductBoard, Story, LiveSessionStatus, BackboneTask, Release, Persona } from './types';
+import { ProductBoard, Story, LiveSessionStatus, BackboneTask, Release, Persona, JourneyPhase } from './types';
 import { MOCK_PRODUCTS } from './constants';
 import { Board } from './components/Board';
 import { ProductDashboard } from './components/ProductDashboard';
@@ -111,6 +112,28 @@ export default function App() {
           ...activeProduct,
           personas: [...activeProduct.personas, newPersona]
       });
+  };
+
+  const handleAddPhase = () => {
+    if (!activeProduct) return;
+    const newPhase: JourneyPhase = {
+      id: `ph-${Date.now()}`,
+      title: 'New Phase',
+      order: activeProduct.phases.length,
+      color: '#6366f1' // Default Indigo
+    };
+    handleUpdateProduct({
+      ...activeProduct,
+      phases: [...activeProduct.phases, newPhase]
+    });
+  };
+
+  const handleUpdatePhase = (updatedPhase: JourneyPhase) => {
+    if (!activeProduct) return;
+    handleUpdateProduct({
+      ...activeProduct,
+      phases: activeProduct.phases.map(p => p.id === updatedPhase.id ? updatedPhase : p)
+    });
   };
 
   const handleOnboardingFinish = (newProduct: ProductBoard) => {
@@ -235,7 +258,7 @@ export default function App() {
                 `}
             >
                 {liveStatus.isConnected ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
-                {liveStatus.isConnected ? 'Live Agent Active' : 'Enable Agent'}
+                {liveStatus.isConnected ? 'Agent Active' : 'Enable Agent'}
             </button>
         </div>
       </header>
@@ -250,6 +273,8 @@ export default function App() {
             onAddStep={() => setCreatingStep(true)}
             onAddRelease={() => setCreatingRelease(true)}
             onAddStory={(releaseId, taskId) => setStoryContext({ releaseId, taskId })}
+            onAddPhase={handleAddPhase}
+            onUpdatePhase={handleUpdatePhase}
           />
         </main>
 
@@ -317,6 +342,7 @@ export default function App() {
             onClose={() => setCreatingStep(false)}
             step={{ id: '', title: '', order: 0 } as BackboneTask}
             personas={activeProduct.personas}
+            phases={activeProduct.phases}
             onSave={handleCreateStep}
           />
         )}

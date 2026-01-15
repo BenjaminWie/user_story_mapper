@@ -22,8 +22,8 @@ const INITIAL_PERSONAS: Persona[] = [
 ];
 
 const INITIAL_PHASES: JourneyPhase[] = [
-  { id: 'ph1', title: 'Acquisition', order: 0 },
-  { id: 'ph2', title: 'Conversion', order: 1 },
+  { id: 'ph1', title: 'Acquisition', order: 0, color: '#3b82f6' },
+  { id: 'ph2', title: 'Conversion', order: 1, color: '#f59e0b' },
 ];
 
 const INITIAL_TASKS: BackboneTask[] = [

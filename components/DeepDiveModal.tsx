@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { BackboneTask, Persona, Story, ProductBoard } from '../types';
 import { geminiService } from '../services/geminiService';
-import { X, Sparkles, Loader2, Save } from 'lucide-react';
+import { X, Sparkles, Loader2, Save, User, Layers, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { motion } from 'framer-motion';
 
@@ -21,6 +22,10 @@ export const DeepDiveModal: React.FC<Props> = ({ type, data, context, isOpen, on
   const [content, setContent] = useState<any>(data);
   const [isLoading, setIsLoading] = useState(false);
   const [aiResult, setAiResult] = useState<string | null>(null);
+
+  // Edit Modes
+  const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [isEditingResearch, setIsEditingResearch] = useState(false);
 
   useEffect(() => {
     if (isOpen && data) {
@@ -68,37 +73,126 @@ export const DeepDiveModal: React.FC<Props> = ({ type, data, context, isOpen, on
             return (
                 <div className="group h-full flex flex-col">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 group-focus-within:text-indigo-400 transition-colors">Product Vision Statement</label>
-                    <textarea 
-                        className="w-full flex-1 p-6 bg-black/20 border border-white/10 rounded-2xl text-slate-200 text-lg leading-relaxed focus:outline-none focus:bg-slate-900/60 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 focus:shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] transition-all duration-300 resize-none" 
-                        value={content.meta?.vision || ''}
-                        onChange={(e) => setContent({...content, meta: {...content.meta, vision: e.target.value}})}
-                        placeholder="Define your product vision..."
-                    />
+                    <div className="relative flex-1">
+                        <textarea 
+                            className="w-full h-full p-8 bg-black/20 border border-white/10 rounded-2xl text-slate-200 text-2xl font-light leading-relaxed focus:outline-none focus:bg-slate-900/60 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 focus:shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] transition-all duration-300 resize-none text-center" 
+                            value={content.meta?.vision || ''}
+                            onChange={(e) => setContent({...content, meta: {...content.meta, vision: e.target.value}})}
+                            placeholder="Our vision is to [target audience] who [need/problem] by [solution]..."
+                        />
+                        <div className="absolute bottom-4 left-0 w-full text-center text-xs text-slate-600 pointer-events-none">
+                            Tip: Try the "Elevator Pitch" format.
+                        </div>
+                    </div>
                 </div>
             );
         case 'TASK':
             const task = content as BackboneTask;
+            const currentPhase = context.phases.find(p => p.id === task.phaseId);
+
             return (
-                <div className="space-y-6 h-full flex flex-col">
-                     <div className="grid grid-cols-2 gap-8 flex-1 min-h-0">
-                        <div className="flex flex-col group">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 group-focus-within:text-indigo-400 transition-colors">Description</label>
-                            <textarea 
-                                className="w-full flex-1 p-5 bg-black/20 border border-white/10 rounded-2xl text-sm text-slate-300 focus:outline-none focus:bg-slate-900/60 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all duration-300 resize-none shadow-inner leading-relaxed"
-                                value={task.details?.description || ''}
-                                onChange={e => setContent({...task, details: {...task.details, description: e.target.value}})}
-                                placeholder="Describe the user activity in this step..."
-                            />
-                        </div>
-                        <div className="bg-slate-900/40 p-5 rounded-2xl border border-white/5 flex flex-col relative overflow-hidden">
-                            <div className="absolute top-0 right-0 p-4 opacity-10">
-                                <Sparkles className="w-24 h-24 text-emerald-500" />
+                <div className="h-full flex flex-col">
+                     {/* Context Badges / Selectors */}
+                     <div className="flex justify-end gap-3 mb-6">
+                        
+                        {/* Phase Selector */}
+                        <div className="relative group">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                                <Layers className="w-3 h-3 text-slate-400" />
                             </div>
-                            <label className="text-xs font-bold text-emerald-400 uppercase flex items-center gap-2 mb-4 tracking-widest relative z-10">
+                            <select
+                                value={task.phaseId}
+                                onChange={(e) => setContent({...task, phaseId: e.target.value})}
+                                className="appearance-none pl-9 pr-8 py-2 bg-white/5 border border-white/10 hover:border-white/20 rounded-full text-xs font-bold uppercase tracking-wide text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                                style={{ color: currentPhase?.color }}
+                            >
+                                {context.phases.map(p => (
+                                    <option key={p.id} value={p.id} className="bg-[#0f172a] text-slate-200">
+                                        {p.title}
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                                <ChevronDown className="w-3 h-3 text-slate-500" />
+                            </div>
+                        </div>
+
+                        {/* Persona Selector */}
+                         <div className="relative group">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                                <User className="w-3 h-3 text-slate-400" />
+                            </div>
+                            <select
+                                value={task.personaId || ''}
+                                onChange={(e) => setContent({...task, personaId: e.target.value})}
+                                className="appearance-none pl-9 pr-8 py-2 bg-white/5 border border-white/10 hover:border-white/20 rounded-full text-xs font-bold uppercase tracking-wide text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all cursor-pointer"
+                            >
+                                <option value="" className="bg-[#0f172a] text-slate-400">No Persona</option>
+                                {context.personas.map(p => (
+                                    <option key={p.id} value={p.id} className="bg-[#0f172a] text-slate-200">
+                                        {p.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                                <ChevronDown className="w-3 h-3 text-slate-500" />
+                            </div>
+                        </div>
+
+                     </div>
+
+                     <div className="grid grid-cols-2 gap-6 flex-1 min-h-0">
+                        {/* LEFT: Description */}
+                        <div className="flex flex-col group h-full">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 group-focus-within:text-indigo-400 transition-colors">User Step Description</label>
+                            <div 
+                                className="w-full flex-1 p-6 bg-black/20 border border-white/10 rounded-2xl text-sm text-slate-300 overflow-y-auto custom-scrollbar hover:border-white/20 transition-colors relative"
+                                onClick={() => setIsEditingDesc(true)}
+                            >
+                                {isEditingDesc ? (
+                                    <textarea 
+                                        autoFocus
+                                        className="w-full h-full bg-transparent border-none outline-none resize-none"
+                                        value={task.details?.description || ''}
+                                        onChange={e => setContent({...task, details: {...task.details, description: e.target.value}})}
+                                        onBlur={() => setIsEditingDesc(false)}
+                                    />
+                                ) : (
+                                    <div className="prose prose-sm prose-invert">
+                                        <ReactMarkdown>{task.details?.description || '*Click to add description...*'}</ReactMarkdown>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* RIGHT: Technical Research */}
+                        <div className="flex flex-col h-full relative group">
+                            <label className="text-xs font-bold text-emerald-400 uppercase flex items-center gap-2 mb-3 tracking-widest relative z-10">
                                 <Sparkles className="w-3 h-3" /> Technical Research (AI)
                             </label>
-                            <div className="prose prose-sm prose-invert overflow-y-auto custom-scrollbar relative z-10 flex-1 pr-2">
-                                <ReactMarkdown>{task.details?.technical_research || '*Click Magic Fill to generate technical insights...*'}</ReactMarkdown>
+                            
+                            <div 
+                                className="w-full flex-1 p-6 bg-emerald-900/10 border border-emerald-500/20 rounded-2xl text-sm text-slate-300 overflow-y-auto custom-scrollbar relative hover:border-emerald-500/40 transition-colors"
+                                onClick={() => setIsEditingResearch(true)}
+                            >
+                                {isEditingResearch ? (
+                                    <textarea 
+                                        autoFocus
+                                        className="w-full h-full bg-transparent border-none outline-none resize-none font-mono text-xs leading-relaxed"
+                                        value={task.details?.technical_research || ''}
+                                        onChange={e => setContent({...task, details: {...task.details, technical_research: e.target.value}})}
+                                        onBlur={() => setIsEditingResearch(false)}
+                                    />
+                                ) : (
+                                    <div className="prose prose-sm prose-invert">
+                                        <ReactMarkdown>{task.details?.technical_research || '*Click Magic Fill to generate technical insights...*'}</ReactMarkdown>
+                                    </div>
+                                )}
+                                {!task.details?.technical_research && !isEditingResearch && (
+                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+                                        <Sparkles className="w-12 h-12 text-emerald-500" />
+                                    </div>
+                                )}
                             </div>
                         </div>
                      </div>
@@ -146,7 +240,7 @@ export const DeepDiveModal: React.FC<Props> = ({ type, data, context, isOpen, on
         animate={{ x: 0 }}
         exit={{ x: "100%" }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        className="w-full max-w-2xl bg-[#0f172a]/95 h-full shadow-[0_0_100px_rgba(0,0,0,0.8)] flex flex-col pointer-events-auto border-l border-white/10 relative"
+        className="w-full max-w-4xl bg-[#0f172a] h-full shadow-[0_0_100px_rgba(0,0,0,0.8)] flex flex-col pointer-events-auto border-l border-white/10 relative"
       >
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent pointer-events-none" />
         
@@ -164,7 +258,7 @@ export const DeepDiveModal: React.FC<Props> = ({ type, data, context, isOpen, on
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar relative z-10 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-opacity-5">
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar relative z-10">
             {renderContent()}
         </div>
 

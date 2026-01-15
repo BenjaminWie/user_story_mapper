@@ -18,6 +18,7 @@ export interface JourneyPhase {
   id: string;
   title: string;
   order: number;
+  color?: string;
 }
 
 export interface Persona {
