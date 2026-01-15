@@ -1,7 +1,8 @@
+
 import React, { useState, useMemo } from 'react';
 import { DndContext, DragOverlay, useDraggable, useDroppable, DragEndEvent } from '@dnd-kit/core';
-import { ProductBoard, Story, Release, Persona, BackboneTask } from '../types';
-import { Plus, LayoutGrid } from 'lucide-react';
+import { ProductBoard, Story, Release, Persona, BackboneTask, JourneyPhase } from '../types';
+import { Plus, LayoutGrid, ChevronRight, ChevronDown, Layers } from 'lucide-react';
 import clsx from 'clsx';
 import { DeepDiveModal } from './DeepDiveModal';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -15,7 +16,6 @@ const StoryCard: React.FC<{ story: Story }> = ({ story }) => {
 
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
 
-  // Modern slim category styling with glowing borders
   const categoryStyle = {
     'Feature': 'border-l-amber-400 from-amber-900/10 to-transparent',
     'Bug': 'border-l-red-500 from-red-900/10 to-transparent',
@@ -67,20 +67,25 @@ const StoryCard: React.FC<{ story: Story }> = ({ story }) => {
 // --- Drop Zone Cell ---
 const Cell: React.FC<{ 
   releaseId: string; 
-  taskId: string; 
+  taskId?: string; // If undefined, this is a Phase summary cell
+  phaseId?: string; // Used if taskId is undefined
   stories: Story[];
   onOpenStory: (s: Story) => void;
   onAddStory: () => void;
-}> = ({ releaseId, taskId, stories, onOpenStory, onAddStory }) => {
-  const cellId = `${releaseId}::${taskId}`;
-  const { setNodeRef, isOver } = useDroppable({ id: cellId });
+  isPhaseSummary?: boolean;
+}> = ({ releaseId, taskId, phaseId, stories, onOpenStory, onAddStory, isPhaseSummary }) => {
+  
+  // If phase summary, use phaseId in ID, else use taskId
+  const dropId = isPhaseSummary ? `${releaseId}::PHASE::${phaseId}` : `${releaseId}::${taskId}`;
+  const { setNodeRef, isOver } = useDroppable({ id: dropId });
 
   return (
     <div 
       ref={setNodeRef}
       className={clsx(
         "min-h-[160px] p-3 transition-all flex flex-col group/cell relative h-full border-r border-dashed border-white/5",
-        isOver ? "bg-indigo-500/10 shadow-[inset_0_0_20px_rgba(99,102,241,0.1)]" : "bg-transparent"
+        isOver ? "bg-indigo-500/10 shadow-[inset_0_0_20px_rgba(99,102,241,0.1)]" : "bg-transparent",
+        isPhaseSummary && "bg-white/[0.02]"
       )}
     >
       <div className="flex-1 space-y-2">
@@ -122,13 +127,46 @@ export const Board: React.FC<BoardProps> = ({
   onAddStory 
 }) => {
   const [activeStory, setActiveStory] = useState<Story | null>(null);
+  const [collapsedPhases, setCollapsedPhases] = useState<Set<string>>(new Set());
   
   // Modal State
   const [modalType, setModalType] = useState<'VISION'|'TASK'|'STORY'|null>(null);
   const [selectedItem, setSelectedItem] = useState<any>(null);
 
+  const togglePhase = (phaseId: string) => {
+    const next = new Set(collapsedPhases);
+    if (next.has(phaseId)) next.delete(phaseId);
+    else next.add(phaseId);
+    setCollapsedPhases(next);
+  };
+
   const handleDragStart = (e: any) => {
     setActiveStory(e.active.data.current?.story || null);
+  };
+
+  // Intercept DragEnd to handle Phase Summary Drops
+  const handleInternalDragEnd = (e: DragEndEvent) => {
+      const { active, over } = e;
+      if (!over) return;
+      const overId = over.id as string;
+
+      // Handle drop on Phase Summary Column
+      // Format: "releaseId::PHASE::phaseId"
+      if (overId.includes('::PHASE::')) {
+          const [releaseId, _, phaseId] = overId.split('::');
+          // Find the first task in this phase to assign the story to
+          const firstTask = product.tasks.find(t => t.phaseId === phaseId);
+          if (firstTask) {
+             // Create a synthetic event to pass to parent
+             const syntheticEvent = {
+                 ...e,
+                 over: { ...over, id: `${releaseId}::${firstTask.id}` } // Redirect to first task
+             };
+             onDragEnd(syntheticEvent as DragEndEvent);
+             return;
+          }
+      }
+      onDragEnd(e);
   };
 
   const handleOpenModal = (type: 'VISION'|'TASK'|'STORY', item: any) => {
@@ -162,25 +200,56 @@ export const Board: React.FC<BoardProps> = ({
       onUpdateProduct({ ...product, stories: [...product.stories, ...createdStories] });
   };
 
-  // Group tasks by persona for visual rendering
-  const groupedTasks = useMemo(() => {
-      const groups: { personaId: string | undefined; tasks: BackboneTask[] }[] = [];
-      let currentGroup: { personaId: string | undefined; tasks: BackboneTask[] } | null = null;
-      
-      product.tasks.forEach(task => {
-          if (currentGroup && currentGroup.personaId === task.personaId) {
-              currentGroup.tasks.push(task);
-          } else {
-              if (currentGroup) groups.push(currentGroup);
-              currentGroup = { personaId: task.personaId, tasks: [task] };
-          }
-      });
-      if (currentGroup) groups.push(currentGroup);
-      return groups;
-  }, [product.tasks]);
+  // --- Column Calculation ---
+  // We need to flatten the columns based on whether a Phase is collapsed or not.
+  // A column can be a specific TASK or a PHASE_SUMMARY.
+
+  const visibleColumns = useMemo(() => {
+    const columns: Array<{ 
+        type: 'TASK' | 'PHASE_SUMMARY', 
+        id: string, // taskId or phaseId
+        data: any, // Task object or Phase object
+        width: string
+    }> = [];
+
+    // Ensure we have at least one phase if data is old
+    const phasesToRender = product.phases && product.phases.length > 0 
+        ? product.phases 
+        : [{ id: 'default_phase', title: 'Main Journey', order: 0 }];
+
+    phasesToRender.forEach(phase => {
+        const isCollapsed = collapsedPhases.has(phase.id);
+        // Find tasks for this phase
+        const phaseTasks = product.tasks.filter(t => t.phaseId === phase.id || (!t.phaseId && phase.id === 'default_phase'));
+        
+        if (isCollapsed) {
+            columns.push({
+                type: 'PHASE_SUMMARY',
+                id: phase.id,
+                data: phase,
+                width: 'min-w-[200px]'
+            });
+        } else {
+            if (phaseTasks.length === 0) {
+                 // Empty phase, show drop zone? or just phase header?
+                 // For now, let's assume valid data or just show empty space
+            }
+            phaseTasks.forEach(task => {
+                columns.push({
+                    type: 'TASK',
+                    id: task.id,
+                    data: task,
+                    width: 'min-w-[240px]'
+                });
+            });
+        }
+    });
+
+    return columns;
+  }, [product.phases, product.tasks, collapsedPhases]);
 
   return (
-    <DndContext onDragStart={handleDragStart} onDragEnd={onDragEnd}>
+    <DndContext onDragStart={handleDragStart} onDragEnd={handleInternalDragEnd}>
       <div className="flex flex-col min-w-max h-full">
         
         {/* L1: Vision Bar */}
@@ -194,66 +263,120 @@ export const Board: React.FC<BoardProps> = ({
             </div>
         </div>
 
-        {/* L2 & L3: Backbone Header (Personas & Tasks) */}
-        <div className="flex sticky top-[53px] z-30 bg-[#121212] shadow-lg shadow-black/50 border-b border-white/10">
-          {/* Release Sidebar Header Spacer - Reduced width */}
-          <div className="w-44 flex-shrink-0 bg-[#18181b] border-r border-white/5 p-4 flex items-end pb-2">
-             <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Story Map Journey</span>
-          </div>
-          
-          {/* Backbone Columns (Grouped) */}
-          <div className="flex flex-1">
-            {groupedTasks.map((group, groupIdx) => {
-              const persona = product.personas.find(p => p.id === group.personaId);
-              return (
-                <div key={groupIdx} className="flex flex-col border-r border-white/5 relative">
-                    {/* Persona Header Row - spans all tasks in group */}
-                    <div 
-                        className="h-6 flex items-center justify-center border-b border-white/5 w-full relative overflow-hidden"
-                    >
-                        {/* Colored Glass Background for Persona */}
-                        <div 
-                            className="absolute inset-0 opacity-10"
-                            style={{ backgroundColor: persona?.color || '#334155' }}
-                        />
-                        {persona && (
-                            <div className="relative z-10 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#121212]/80 border border-white/10 shadow-sm text-[9px] font-bold text-slate-300 uppercase tracking-wide scale-95">
-                                <img src={persona.avatarUrl} className="w-3.5 h-3.5 rounded-full ring-1 ring-white/20" />
-                                {persona.role}
-                            </div>
-                        )}
-                    </div>
-                    {/* Tasks Row */}
-                    <div className="flex flex-1">
-                        {group.tasks.map((task, i) => (
-                             <div key={task.id} className={clsx(
-                                "flex-1 min-w-[240px] bg-[#18181b]/30 p-1 border-r border-white/5 backdrop-blur-sm",
-                             )}>
-                                <motion.div 
-                                    whileHover={{ y: -2, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)" }}
-                                    onDoubleClick={() => handleOpenModal('TASK', task)}
-                                    className="bg-gradient-to-br from-[#1c1c1e] to-[#27272a] border border-white/5 text-slate-200 rounded-lg p-3 shadow-sm cursor-pointer hover:border-indigo-400/30 transition-all min-h-[72px] flex flex-col justify-between group"
-                                >
-                                    <h3 className="font-bold text-xs leading-tight text-slate-200 group-hover:text-white line-clamp-2">{task.title}</h3>
-                                    <div className="flex justify-between items-end mt-1.5">
-                                        <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Step {task.order + 1}</span>
-                                        <LayoutGrid className="w-2.5 h-2.5 text-indigo-400 opacity-50 group-hover:opacity-100" />
+        {/* L2 & L3: Header Stack */}
+        <div className="flex flex-col sticky top-[53px] z-30 shadow-lg shadow-black/50">
+            
+            {/* Row 1: Journey Phases (Activities) */}
+            <div className="flex bg-[#121212] border-b border-white/5">
+                <div className="w-44 flex-shrink-0 bg-[#18181b] border-r border-white/5 p-2 flex items-center justify-center">
+                    <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest flex items-center gap-1">
+                        <Layers className="w-3 h-3" /> Journey
+                    </span>
+                </div>
+                <div className="flex flex-1">
+                    {(product.phases || []).length > 0 ? product.phases.map(phase => {
+                        const isCollapsed = collapsedPhases.has(phase.id);
+                        const phaseTasks = product.tasks.filter(t => t.phaseId === phase.id);
+                        // Calculate colspan style approximately by logic:
+                        // If collapsed: takes 1 slot.
+                        // If expanded: takes N slots (where N = phaseTasks.length).
+                        // Since we are using flexbox, we just need to ensure the header width matches the columns below.
+                        
+                        return (
+                            <div 
+                                key={phase.id} 
+                                className={clsx(
+                                    "border-r border-white/10 px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors group select-none",
+                                    // If collapsed, width is fixed to summary column. If expanded, it grows to cover children.
+                                    isCollapsed ? "min-w-[200px]" : `flex-[${phaseTasks.length}]`
+                                )}
+                                style={{ flexGrow: isCollapsed ? 0 : phaseTasks.length }}
+                                onClick={() => togglePhase(phase.id)}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1 rounded-md bg-indigo-500/10 text-indigo-400">
+                                        {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                     </div>
-                                </motion.div>
-                             </div>
-                        ))}
+                                    <span className="text-xs font-bold text-slate-300 uppercase tracking-wide group-hover:text-white">{phase.title}</span>
+                                    {isCollapsed && (
+                                        <span className="text-[9px] bg-white/10 px-1.5 rounded-full text-slate-500">{phaseTasks.length} Steps</span>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    }) : (
+                         <div className="flex-1 px-4 py-2 text-xs text-slate-500 italic">No Phases Defined</div>
+                    )}
+                     {/* Add Step Button Area */}
+                     <div className="w-16 border-l border-dashed border-white/5" />
+                </div>
+            </div>
+
+            {/* Row 2: Personas & Tasks (The Backbone) */}
+            <div className="flex bg-[#121212] border-b border-white/10">
+                <div className="w-44 flex-shrink-0 bg-[#18181b] border-r border-white/5 p-4 flex items-end pb-2">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Steps</span>
+                </div>
+                
+                <div className="flex flex-1">
+                    {visibleColumns.map((col, idx) => {
+                        if (col.type === 'PHASE_SUMMARY') {
+                            // Render simplified "Overview" column header
+                            return (
+                                <div key={`ph-col-${col.id}`} className={clsx("flex-col border-r border-white/5 relative bg-white/[0.02]", col.width)}>
+                                    <div className="flex-1 flex items-center justify-center h-full min-h-[96px] p-2 text-center">
+                                        <p className="text-xs text-slate-500 italic">
+                                            Phase Collapsed <br/>
+                                            <span className="font-bold text-slate-400 not-italic">{col.data.title}</span>
+                                        </p>
+                                    </div>
+                                </div>
+                            );
+                        } else {
+                            // Render Normal Task Header
+                            const task = col.data as BackboneTask;
+                            const persona = product.personas.find(p => p.id === task.personaId);
+                            return (
+                                <div key={task.id} className={clsx("flex flex-col border-r border-white/5 relative", col.width)}>
+                                    {/* Persona Strip */}
+                                    <div className="h-6 flex items-center justify-center border-b border-white/5 w-full relative overflow-hidden bg-[#18181b]/50">
+                                        {persona && (
+                                            <>
+                                                <div className="absolute inset-0 opacity-10" style={{ backgroundColor: persona.color }} />
+                                                <div className="relative z-10 flex items-center gap-1.5 px-2 py-0.5 text-[9px] font-bold text-slate-300 uppercase tracking-wide scale-90">
+                                                    <img src={persona.avatarUrl} className="w-3 h-3 rounded-full" />
+                                                    {persona.role}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                    {/* Task Card */}
+                                    <div className="flex-1 p-1 bg-[#18181b]/30 backdrop-blur-sm">
+                                        <motion.div 
+                                            whileHover={{ y: -2 }}
+                                            onDoubleClick={() => handleOpenModal('TASK', task)}
+                                            className="bg-gradient-to-br from-[#1c1c1e] to-[#27272a] border border-white/5 text-slate-200 rounded-lg p-3 shadow-sm cursor-pointer hover:border-indigo-400/30 transition-all min-h-[72px] flex flex-col justify-between group h-full"
+                                        >
+                                            <h3 className="font-bold text-xs leading-tight text-slate-200 group-hover:text-white line-clamp-2">{task.title}</h3>
+                                            <div className="flex justify-between items-end mt-1.5">
+                                                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">#{task.order + 1}</span>
+                                                <LayoutGrid className="w-2.5 h-2.5 text-indigo-400 opacity-50 group-hover:opacity-100" />
+                                            </div>
+                                        </motion.div>
+                                    </div>
+                                </div>
+                            );
+                        }
+                    })}
+
+                    {/* Add Step Button */}
+                    <div className="w-16 flex items-center justify-center border-l border-dashed border-slate-700 hover:bg-white/5 transition-colors cursor-pointer" onClick={onAddStep}>
+                        <button className="p-2 bg-white/5 border border-white/5 hover:bg-indigo-600 hover:text-white hover:border-transparent text-slate-500 rounded-full transition-all shadow-lg scale-90">
+                            <Plus className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
-              );
-            })}
-
-            {/* Add Step Button */}
-            <div className="w-16 flex items-center justify-center border-l border-dashed border-slate-700 hover:bg-white/5 transition-colors cursor-pointer" onClick={onAddStep}>
-                <button className="p-2 bg-white/5 border border-white/5 hover:bg-indigo-600 hover:text-white hover:border-transparent text-slate-500 rounded-full transition-all shadow-lg scale-90">
-                    <Plus className="w-4 h-4" />
-                </button>
             </div>
-          </div>
         </div>
 
         {/* L4 & L5: Swimlanes & Stories */}
@@ -261,7 +384,7 @@ export const Board: React.FC<BoardProps> = ({
           {product.releases.map(release => (
             <div key={release.id} className="flex border-b border-white/5 min-h-[160px]">
               
-              {/* Sidebar - Reduced width */}
+              {/* Sidebar */}
               <div className="w-44 flex-shrink-0 bg-[#18181b]/95 backdrop-blur-sm border-r border-white/5 p-4 pt-5 group relative overflow-hidden">
                 <div className={clsx("absolute left-0 top-0 bottom-0 w-1", release.status === 'active' ? 'bg-emerald-500' : 'bg-amber-500/50')} />
                 <h4 className="font-bold text-slate-200 text-base leading-tight tracking-tight">{release.title}</h4>
@@ -274,14 +397,40 @@ export const Board: React.FC<BoardProps> = ({
                 )}
               </div>
 
-              {/* Grid - Grouped matching header */}
+              {/* Grid Body */}
               <div className="flex flex-1">
-                {groupedTasks.map((group, groupIdx) => (
-                    <div key={groupIdx} className="flex border-r border-white/5">
-                        {group.tasks.map((task, i) => (
-                             <div key={task.id} className={clsx(
-                                "flex-1 min-w-[240px]",
-                             )}>
+                {visibleColumns.map(col => {
+                    if (col.type === 'PHASE_SUMMARY') {
+                        // Aggregate stories from all tasks in this phase
+                        const phaseId = col.id;
+                        // Find all tasks that belong to this phase
+                        const taskIdsInPhase = product.tasks.filter(t => t.phaseId === phaseId).map(t => t.id);
+                        
+                        const aggregatedStories = product.stories.filter(s => 
+                            s.release_id === release.id && taskIdsInPhase.includes(s.parent_task_id)
+                        );
+
+                        return (
+                             <div key={`${release.id}-ph-${phaseId}`} className={clsx("flex-1", col.width)}>
+                                <Cell 
+                                  releaseId={release.id} 
+                                  phaseId={phaseId}
+                                  stories={aggregatedStories}
+                                  onOpenStory={(s) => handleOpenModal('STORY', s)}
+                                  onAddStory={() => {
+                                      // Default: Add to first task of phase
+                                      const firstTask = product.tasks.find(t => t.phaseId === phaseId);
+                                      if(firstTask) onAddStory(release.id, firstTask.id);
+                                  }}
+                                  isPhaseSummary={true}
+                                />
+                             </div>
+                        );
+                    } else {
+                        // Normal Task Cell
+                        const task = col.data as BackboneTask;
+                         return (
+                             <div key={`${release.id}-${task.id}`} className={clsx("flex-1", col.width)}>
                                 <Cell 
                                   releaseId={release.id} 
                                   taskId={task.id}
@@ -290,9 +439,9 @@ export const Board: React.FC<BoardProps> = ({
                                   onAddStory={() => onAddStory(release.id, task.id)}
                                 />
                              </div>
-                        ))}
-                    </div>
-                ))}
+                        );
+                    }
+                })}
                 <div className="w-16 bg-transparent" />
               </div>
 

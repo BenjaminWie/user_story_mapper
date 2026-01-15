@@ -1,4 +1,5 @@
-import { ProductBoard, BackboneTask, Story, Release, Persona } from './types';
+
+import { ProductBoard, BackboneTask, Story, Release, Persona, JourneyPhase } from './types';
 import { FunctionDeclaration, Type } from '@google/genai';
 
 const INITIAL_PERSONAS: Persona[] = [
@@ -20,10 +21,16 @@ const INITIAL_PERSONAS: Persona[] = [
   },
 ];
 
+const INITIAL_PHASES: JourneyPhase[] = [
+  { id: 'ph1', title: 'Acquisition', order: 0 },
+  { id: 'ph2', title: 'Conversion', order: 1 },
+];
+
 const INITIAL_TASKS: BackboneTask[] = [
-  { id: 'bt1', title: 'Onboarding', order: 0, personaId: 'p1', details: { description: 'User registration flow', technical_research: 'Auth0 vs Custom' } },
-  { id: 'bt2', title: 'Search', order: 1, personaId: 'p1', details: { description: 'Finding items', technical_research: 'ElasticSearch implementation' } },
-  { id: 'bt3', title: 'Checkout', order: 2, personaId: 'p1', details: { description: 'Payment processing', technical_research: 'Stripe integration' } },
+  { id: 'bt1', phaseId: 'ph1', title: 'Sign Up Flow', order: 0, personaId: 'p1', details: { description: 'User registration', technical_research: 'Auth0 vs Custom' } },
+  { id: 'bt2', phaseId: 'ph1', title: 'Profile Setup', order: 1, personaId: 'p1', details: { description: 'User preferences', technical_research: '' } },
+  { id: 'bt3', phaseId: 'ph2', title: 'Product Search', order: 2, personaId: 'p1', details: { description: 'Finding items', technical_research: 'ElasticSearch' } },
+  { id: 'bt4', phaseId: 'ph2', title: 'Checkout', order: 3, personaId: 'p1', details: { description: 'Payment processing', technical_research: 'Stripe' } },
 ];
 
 const INITIAL_RELEASES: Release[] = [
@@ -33,8 +40,9 @@ const INITIAL_RELEASES: Release[] = [
 
 const INITIAL_STORIES: Story[] = [
   { id: 's1', title: 'Setup Auth0', release_id: 'r1', parent_task_id: 'bt1', status: 'done', category: 'Infra' },
-  { id: 's2', title: 'Search Bar UI', release_id: 'r1', parent_task_id: 'bt2', status: 'working', category: 'Design' },
-  { id: 's3', title: 'Stripe API', release_id: 'r1', parent_task_id: 'bt3', status: 'todo', category: 'Feature' },
+  { id: 's2', title: 'Avatar Upload', release_id: 'r1', parent_task_id: 'bt2', status: 'working', category: 'Feature' },
+  { id: 's3', title: 'Search Bar UI', release_id: 'r1', parent_task_id: 'bt3', status: 'working', category: 'Design' },
+  { id: 's4', title: 'Stripe API', release_id: 'r1', parent_task_id: 'bt4', status: 'todo', category: 'Feature' },
 ];
 
 export const MOCK_PRODUCTS: ProductBoard[] = [
@@ -47,21 +55,11 @@ export const MOCK_PRODUCTS: ProductBoard[] = [
       market_analysis: 'High demand for AI tools.'
     },
     personas: INITIAL_PERSONAS,
+    phases: INITIAL_PHASES,
     tasks: INITIAL_TASKS,
     releases: INITIAL_RELEASES,
     stories: INITIAL_STORIES
   },
-  {
-    id: 'prod-2',
-    name: 'Mobile App',
-    meta: {
-      vision: "A companion app for on-the-go management.",
-    },
-    personas: [],
-    tasks: [],
-    releases: [],
-    stories: []
-  }
 ];
 
 // --- Live API Tools ---

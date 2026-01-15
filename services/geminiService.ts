@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, LiveServerMessage, Modality, Type, Chat } from "@google/genai";
 import { TOOLS_DECLARATION } from '../constants';
 import { Story, ProductBoard } from '../types';
@@ -97,7 +98,7 @@ export class GeminiService {
     return response.text || "Analysis failed.";
   }
 
-  // 3. Magic Fill: Generate User Stories (For Tasks)
+  // 3. Magic Fill: Generate Stories (For Tasks)
   async generateStoriesForTask(taskTitle: string, personaRole: string, vision: string): Promise<string[]> {
     const prompt = `Act as a Product Owner. Generate 5 atomic, high-quality user stories (titles only) for a "${personaRole}" performing the task "${taskTitle}".
     Context: ${vision}.
@@ -236,33 +237,35 @@ export class GeminiService {
         Keep your questions short, encouraging, and conversational. Ask ONE question at a time.
         
         Steps to cover:
-        1. Product Name & High-level Vision (What are we building and why?)
-        2. The Key Personas (Who are the different types of users? e.g. Shopper, Admin)
-        3. The User Journey Backbone (What are the big chronological steps? e.g. Search -> Add to Cart -> Checkout)
-        4. The First Release (What is the MVP goal?)
+        1. Product Name & High-level Vision
+        2. Key Personas
+        3. The User Journey Backbone (Grouping High-Level Activities AND the specific steps under them).
+        4. The First Release
         
-        When you feel you have enough information to build a v1 board, suggest: "I think we have enough to start! Ready to build?"`
+        When you have enough, suggest: "I think we have enough to start! Ready to build?"`
       }
     });
   }
 
   // 8. Generate Board Structure from Chat
   async generateBoardFromChatHistory(history: string): Promise<Partial<ProductBoard>> {
-    const prompt = `Based on the conversation transcript below, extract the product definition into a JSON object.
+    const prompt = `Based on the conversation, extract the product definition.
+    Structure the backbone into 'phases' (high-level activities like 'Onboarding') and 'tasks' (granular steps like 'Sign Up').
     
     TRANSCRIPT:
     ${history}
     
     Output JSON Schema:
     {
-      "name": "string (Product Name)",
-      "meta": { "vision": "string (The vision statement)" },
+      "name": "string",
+      "meta": { "vision": "string" },
       "personas": [ { "name": "string", "role": "string", "details": { "bio": "string", "pain_points": ["string"] } } ],
-      "tasks": [ { "title": "string (Backbone step)", "details": { "description": "string" } } ],
+      "phases": [ { "id": "ph1", "title": "string (Activity)", "order": 0 } ],
+      "tasks": [ { "title": "string (Step)", "phaseId": "ph1 (matching phase)", "details": { "description": "string" } } ],
       "releases": [ { "title": "string", "description": "string" } ]
     }
     
-    Ensure 'tasks' are chronological.`;
+    Ensure tasks are chronological and linked to valid phaseIds.`;
 
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',

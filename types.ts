@@ -1,3 +1,4 @@
+
 export interface ProductBoard {
   id: string;
   name: string;
@@ -7,9 +8,16 @@ export interface ProductBoard {
     market_analysis?: string;
   };
   personas: Persona[];
-  tasks: BackboneTask[]; // The horizontal backbone (L3)
+  phases: JourneyPhase[]; // New L2: The Activity/Phase (e.g., "Onboarding")
+  tasks: BackboneTask[]; // The horizontal backbone L3 (e.g., "Sign Up", "Profile")
   releases: Release[];   // The swimlanes (L4)
   stories: Story[];      // The atomic units of work (L5)
+}
+
+export interface JourneyPhase {
+  id: string;
+  title: string;
+  order: number;
 }
 
 export interface Persona {
@@ -27,6 +35,7 @@ export interface Persona {
 // Formerly UserStep
 export interface BackboneTask {
   id: string;
+  phaseId: string; // Link to JourneyPhase
   title: string;
   order: number;
   personaId?: string; // Link to Persona who owns this activity

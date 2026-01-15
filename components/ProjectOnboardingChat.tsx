@@ -3,7 +3,7 @@ import { geminiService } from '../services/geminiService';
 import { Chat } from '@google/genai';
 import { Send, Sparkles, Loader2, Play } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ProductBoard, BackboneTask, Persona, Release } from '../types';
+import { ProductBoard, BackboneTask, Persona, Release, JourneyPhase } from '../types';
 
 interface Props {
   onFinish: (product: ProductBoard) => void;
@@ -79,6 +79,16 @@ export const ProjectOnboardingChat: React.FC<Props> = ({ onFinish, onCancel }) =
         // 1. Generate Structure
         const data = await geminiService.generateBoardFromChatHistory(history);
         
+        const generatedPhases: JourneyPhase[] = (data.phases || []).map((p: any, i: number) => ({
+            id: p.id || `ph-${Date.now()}-${i}`,
+            title: p.title || "Phase",
+            order: p.order ?? i
+        }));
+
+        if (generatedPhases.length === 0) {
+            generatedPhases.push({ id: `ph-default`, title: 'Discovery', order: 0 });
+        }
+
         // 2. Hydrate with IDs and defaults
         const newProduct: ProductBoard = {
             id: `prod-${Date.now()}`,
@@ -96,8 +106,10 @@ export const ProjectOnboardingChat: React.FC<Props> = ({ onFinish, onCancel }) =
                 color: ['#8b5cf6', '#10b981', '#f59e0b', '#ec4899'][i % 4],
                 avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=random`
             })),
+            phases: generatedPhases,
             tasks: (data.tasks || []).map((t: any, i: number) => ({
                 id: `t-${Date.now()}-${i}`,
+                phaseId: t.phaseId || generatedPhases[0].id,
                 title: t.title || "Step",
                 order: i,
                 details: t.details || { description: '' }
@@ -117,7 +129,7 @@ export const ProjectOnboardingChat: React.FC<Props> = ({ onFinish, onCancel }) =
             newProduct.releases.push({ id: `r-default`, title: 'MVP', description: 'Initial Release', status: 'active' });
         }
         if (newProduct.tasks.length === 0) {
-            newProduct.tasks.push({ id: `t-default`, title: 'Start', order: 0 });
+            newProduct.tasks.push({ id: `t-default`, phaseId: generatedPhases[0].id, title: 'Start', order: 0 });
         }
 
         onFinish(newProduct);
